@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  static/index.html
+  -----------------
+  FR-1  : URL input with JavaScript validation
+  FR-6  : Second URL input for compare mode
+  FR-7  : Chart.js protocol pie, packet-size histogram, traffic timeline
+  NFR-1 : Step-by-step guided UI with human-readable error messages
+-->
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NetPrint – Network Fingerprint Analyzer</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500&display=swap" rel="stylesheet"/>
+
+  <!-- FR-7: Chart.js for all visualizations -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* ── CSS Variables ──────────────────────────────────────────────────── */
+    :root {
+      --bg:       #050a0f;
+      --surface:  #0b1520;
+      --card:     #0f1e2e;
+      --border:   #1a3a55;
+      --accent:   #00e5ff;   /* cyan  */
+      --accent2:  #ff6b35;   /* orange */
+      --accent3:  #39ff14;   /* green  */
+      --text:     #c8d8e8;
+      --muted:    #5a7a9a;
+      --danger:   #ff3b5c;
+      --purple:   #b44fff;
+      --glow:     0 0 24px rgba(0,229,255,0.35);
+    }
+
+    /* ── Reset & base ───────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Subtle grid overlay for depth */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,0.025) 1px, transparent 1px);
+      background-size: 42px 42px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    header {
+      padding: 36px 0 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 36px;
+    }
+    .logo {
+      font-family: 'Orbitron', monospace;
+      font-size: 30px;
+      font-weight: 900;
+      color: var(--accent);
+      text-shadow: var(--glow);
+      letter-spacing: 5px;
+    }
+    .logo span { color: var(--accent2); }
+    .tagline {
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 5px;
+      letter-spacing: 2px;
+    }
+
+    /* ── Step indicator ─────────────────────────────────────────────────── */
+    /* NFR-1: guides user step-by-step */
+    .steps {
+      display: flex;
+      gap: 0;
+      margin-bottom: 32px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .step {
+      flex: 1;
+      padding: 14px 16px;
+      text-align: center;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 1px;
+      border-right: 1px solid var(--border);
+      transition: background 0.3s, color 0.3s;
+    }
+    .step:last-child { border-right: none; }
+    .step.active { background: rgba(0,229,255,0.08); color: var(--accent); }
+    .step.done   { color: var(--accent3); }
+    .step-num    { font-size: 16px; display: block; margin-bottom: 3px; }
+
+    /* ── Tabs ───────────────────────────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      padding: 10px 28px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 1.5px;
+      color: var(--muted);
+      cursor: pointer;
+      border: none;
+      background: none;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+      text-transform: uppercase;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Input panels ───────────────────────────────────────────────────── */
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      margin-bottom: 28px;
+    }
+    .field-label {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .input-row { display: flex; gap: 12px; align-items: stretch; }
+    .url-input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .url-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0,229,255,0.12);
+    }
+    .url-input::placeholder { color: var(--muted); }
+
+    /* Buttons */
+    .btn {
+      padding: 14px 28px;
+      border: none;
+      border-radius: 8px;
+      font-family: 'Orbitron', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+    }
+    .btn-primary  { background: var(--accent); color: var(--bg); }
+    .btn-primary:hover  { box-shadow: 0 0 28px rgba(0,229,255,0.6); transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+    .btn-outline  { background: transparent; border: 1px solid var(--accent2); color: var(--accent2); }
+    .btn-outline:hover  { background: rgba(255,107,53,0.1); }
+
+    /* Compare two-column inputs */
+    .compare-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+    @media (max-width: 700px) { .compare-cols { grid-template-columns: 1fr; } }
+
+    /* NFR-1: human-readable error messages */
+    .error-box {
+      display: none;
+      background: rgba(255,59,92,0.1);
+      border: 1px solid rgba(255,59,92,0.4);
+      color: var(--danger);
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+      margin-top: 14px;
+    }
+
+    /* ── Loading ─────────────────────────────────────────────────────────── */
+    #loading {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      padding: 60px 20px;
+      gap: 24px;
+    }
+    .spinner {
+      width: 64px; height: 64px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-msg {
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--accent);
+      font-size: 14px;
+      letter-spacing: 2px;
+      animation: blink 1.4s ease-in-out infinite;
+    }
+    .loading-sub {
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 1px;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+    /* ── Results ────────────────────────────────────────────────────────── */
+    #results, #results-compare { display: none; }
+
+    .results-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .results-title {
+      font-family: 'Orbitron', monospace;
+      font-size: 15px;
+      color: var(--accent);
+      letter-spacing: 2px;
+    }
+
+    /* ── Fingerprint card ───────────────────────────────────────────────── */
+    /* Output 1: Network Fingerprint Summary Card */
+    .fp-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      margin-bottom: 24px;
+      animation: rise 0.4s ease;
+    }
+    @keyframes rise { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+
+    .fp-url {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 13px;
+      color: var(--accent2);
+      word-break: break-all;
+      margin-bottom: 3px;
+    }
+    .fp-ts {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 18px;
+    }
+
+    /* Behavior badge (FR-5 labels) */
+    .badge {
+      display: inline-block;
+      padding: 6px 18px;
+      border-radius: 20px;
+      font-family: 'Orbitron', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      margin-bottom: 22px;
+    }
+    .b-streaming { background:rgba(0,229,255,0.12);  color:var(--accent);  border:1px solid var(--accent); }
+    .b-social    { background:rgba(255,107,53,0.12); color:var(--accent2); border:1px solid var(--accent2); }
+    .b-static    { background:rgba(57,255,20,0.12);  color:var(--accent3); border:1px solid var(--accent3); }
+    .b-api       { background:rgba(180,79,255,0.12); color:var(--purple);  border:1px solid var(--purple); }
+    .b-unknown   { background:rgba(90,122,154,0.12); color:var(--muted);   border:1px solid var(--muted); }
+
+    /* Stat boxes (Output 1) */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(155px,1fr));
+      gap: 14px;
+      margin-bottom: 26px;
+    }
+    .stat-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .stat-label {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 9px;
+      color: var(--muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 7px;
+    }
+    .stat-value {
+      font-family: 'Orbitron', monospace;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+    }
+    .stat-unit { font-size: 10px; color: var(--muted); margin-left: 3px; }
+
+    /* FR-6 diff badge */
+    .diff-tag {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 9px;
+      padding: 2px 7px;
+      border-radius: 3px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .diff-hi { background:rgba(255,59,92,0.2);  color:var(--danger); }   /* higher = red */
+    .diff-lo { background:rgba(57,255,20,0.2);  color:var(--accent3); }  /* lower  = green */
+
+    /* ── Charts (FR-7) ──────────────────────────────────────────────────── */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px,1fr));
+      gap: 18px;
+      margin-bottom: 26px;
+    }
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+    }
+    .chart-title {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .chart-wrap { position: relative; height: 210px; }
+
+    /* ── DNS / IP lists ─────────────────────────────────────────────────── */
+    .section-lbl {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .chip-list { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 20px; }
+    .chip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 3px 10px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .ip-grid {
+      columns: 2;
+      column-gap: 16px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      list-style: none;
+    }
+    .ip-grid li { padding: 2px 0; }
+    .ip-grid li::before { content: '▸ '; color: var(--accent); }
+
+    /* ── Compare layout (FR-6) ──────────────────────────────────────────── */
+    .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 800px) { .compare-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="logo">NET<span>PRINT</span></div>
+    <div class="tagline">// NETWORK FINGERPRINT GENERATOR &amp; WEBSITE BEHAVIOR PROFILER</div>
+  </header>
+
+  <!-- ── NFR-1: Step indicator ── -->
+  <div class="steps" id="step-bar">
+    <div class="step active" id="s1"><span class="step-num">①</span>ENTER URL</div>
+    <div class="step"        id="s2"><span class="step-num">②</span>CAPTURE</div>
+    <div class="step"        id="s3"><span class="step-num">③</span>ANALYZE</div>
+    <div class="step"        id="s4"><span class="step-num">④</span>VIEW RESULTS</div>
+  </div>
+
+  <!-- ── Tabs ── -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('single')">Single Site</button>
+    <button class="tab"        onclick="switchTab('compare')">Compare Two Sites</button>
+  </div>
+
+  <!-- ── Single-site panel (FR-1, FR-2) ── -->
+  <div id="tab-single">
+    <div class="panel">
+      <div class="field-label">// Step 1 — Enter Target URL</div>
+      <div class="input-row">
+        <!-- FR-1: clearly labeled text field -->
+        <input id="url-single" class="url-input" type="text"
+               placeholder="https://example.com"
+               onkeydown="if(event.key==='Enter') analyzeSingle()"/>
+        <button class="btn btn-primary" id="btn-single" onclick="analyzeSingle()">
+          ANALYZE
+        </button>
+      </div>
+      <!-- FR-1: inline error message when format is wrong -->
+      <div class="error-box" id="err-single"></div>
+    </div>
+  </div>
+
+  <!-- ── Compare panel (FR-6) ── -->
+  <div id="tab-compare" style="display:none">
+    <div class="panel">
+      <div class="compare-cols">
+        <div>
+          <div class="field-label">// Site A</div>
+          <input id="url-a" class="url-input" type="text" placeholder="https://netflix.com"/>
+        </div>
+        <div>
+          <div class="field-label">// Site B</div>
+          <input id="url-b" class="url-input" type="text" placeholder="https://wikipedia.org"/>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-compare" onclick="analyzeCompare()">
+        COMPARE SITES
+      </button>
+      <div class="error-box" id="err-compare"></div>
+    </div>
+  </div>
+
+  <!-- ── Loading indicator (NFR-2: 10-sec capture) ── -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <div class="loading-msg" id="load-msg">CAPTURING PACKETS...</div>
+    <div class="loading-sub" id="load-sub">Sniffing network interface for 10 seconds</div>
+  </div>
+
+  <!-- ── Single results ── -->
+  <div id="results">
+    <div class="results-bar">
+      <div class="results-title">// FINGERPRINT REPORT</div>
+      <button class="btn btn-outline" onclick="reset()">NEW CAPTURE</button>
+    </div>
+    <div id="fp-single"></div>
+  </div>
+
+  <!-- ── Compare results (FR-6) ── -->
+  <div id="results-compare">
+    <div class="results-bar">
+      <div class="results-title">// COMPARISON REPORT</div>
+      <button class="btn btn-outline" onclick="reset()">NEW CAPTURE</button>
+    </div>
+    <div class="compare-grid" id="fp-compare"></div>
+    <div id="overlay-chart" style="margin-top:22px;"></div>
+  </div>
+
+</div><!-- /wrap -->
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- JavaScript                                                             -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<script>
+/* ── Utilities ──────────────────────────────────────────────────────────── */
+const $  = id => document.getElementById(id);
+const chartInstances = {};   // keep refs so we can destroy before re-render
+
+// FR-1: URL validation — must start with http:// or https:// and have a domain
+function isValidUrl(url) {
+  return /^https?:\/\/[^\s.]+\.[^\s]+/.test(url.trim());
+}
+
+function showErr(elId, msg) {
+  const el = $(elId);
+  el.textContent = '⚠  ' + msg;
+  el.style.display = 'block';
+}
+function hideErr(elId) { $(elId).style.display = 'none'; }
+
+function fmtBytes(n) {
+  if (n >= 1_048_576) return (n/1_048_576).toFixed(1) + ' MB';
+  if (n >= 1_024)     return (n/1_024).toFixed(1) + ' KB';
+  return n + ' B';
+}
+
+function destroyChart(id) {
+  if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
+}
+
+/* ── Step indicator ──────────────────────────────────────────────────────── */
+function setStep(n) {
+  ['s1','s2','s3','s4'].forEach((id,i) => {
+    const el = $(id);
+    el.classList.toggle('active', i+1 === n);
+    el.classList.toggle('done',   i+1 < n);
+  });
+}
+
+/* ── Tab switching ───────────────────────────────────────────────────────── */
+function switchTab(tab) {
+  $('tab-single').style.display  = tab==='single'  ? '' : 'none';
+  $('tab-compare').style.display = tab==='compare' ? '' : 'none';
+  document.querySelectorAll('.tab').forEach((t,i) =>
+    t.classList.toggle('active', (i===0 && tab==='single')||(i===1 && tab==='compare'))
+  );
+  reset();
+}
+
+/* ── Reset view ──────────────────────────────────────────────────────────── */
+function reset() {
+  $('results').style.display         = 'none';
+  $('results-compare').style.display = 'none';
+  $('loading').style.display         = 'none';
+  $('fp-single').innerHTML           = '';
+  $('fp-compare').innerHTML          = '';
+  $('overlay-chart').innerHTML       = '';
+  setStep(1);
+}
+
+/* ── Behavior badge class ────────────────────────────────────────────────── */
+function badgeClass(label) {
+  return ({
+    'Streaming':      'b-streaming',
+    'Social Media':   'b-social',
+    'Static Content': 'b-static',
+    'API-Heavy':      'b-api',
+  })[label] || 'b-unknown';
+}
+
+/* ── Diff badge (FR-6: green = lower, red = higher) ─────────────────────── */
+function diffTag(field, siteUrl, diff) {
+  if (!diff) return '';
+  return diff[field] === siteUrl
+    ? '<span class="diff-tag diff-hi">▲ HIGHER</span>'
+    : '<span class="diff-tag diff-lo">▼ LOWER</span>';
+}
+
+/* ── Build fingerprint card HTML ─────────────────────────────────────────── */
+/* Output 1: Summary Card */
+function buildCard(fp, prefix, diff) {
+  const dnsHtml = fp.dns_queries.length
+    ? fp.dns_queries.slice(0,25).map(d=>`<span class="chip">${d}</span>`).join('')
+    : '<span class="chip">none detected</span>';
+
+  const ipHtml = fp.unique_ips.length
+    ? `<ul class="ip-grid">${fp.unique_ips.slice(0,24).map(ip=>`<li>${ip}</li>`).join('')}</ul>`
+    : '<span style="font-family:Share Tech Mono,monospace;font-size:11px;color:var(--muted)">none detected</span>';
+
+  return `
+  <div class="fp-card">
+    <div class="fp-url">${fp.site_url}</div>
+    <div class="fp-ts">Captured: ${new Date(fp.capture_timestamp).toLocaleString()}</div>
+    <span class="badge ${badgeClass(fp.behavior_label)}">
+      ${fp.behavior_label} &nbsp;·&nbsp; ${fp.confidence}% confidence
+    </span>
+
+    <!-- Stats grid (Output 1) -->
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-label">Packets</div>
+        <div class="stat-value">${fp.total_packets.toLocaleString()}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">
+          Total Data${diff ? diffTag('more_bytes', fp.site_url, diff) : ''}
+        </div>
+        <div class="stat-value">${fmtBytes(fp.total_bytes)}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Top Protocol</div>
+        <div class="stat-value" style="font-size:14px">${fp.top_protocol}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">
+          Unique IPs${diff ? diffTag('more_unique_ips', fp.site_url, diff) : ''}
+        </div>
+        <div class="stat-value">${fp.unique_ip_count}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">
+          Mean Packet${diff ? diffTag('higher_mean_packet', fp.site_url, diff) : ''}
+        </div>
+        <div class="stat-value" style="font-size:16px">
+          ${fp.mean_packet_size}<span class="stat-unit">B</span>
+        </div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Max Packet</div>
+        <div class="stat-value" style="font-size:16px">
+          ${fp.max_packet_size}<span class="stat-unit">B</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- FR-7 Charts -->
+    <div class="charts-grid">
+      <!-- Output 2: Protocol Distribution Graph -->
+      <div class="chart-card">
+        <div class="chart-title">// Protocol Distribution</div>
+        <div class="chart-wrap"><canvas id="${prefix}chart-proto"></canvas></div>
+      </div>
+      <!-- Output 3: Packet Size Histogram -->
+      <div class="chart-card">
+        <div class="chart-title">// Packet Size Histogram</div>
+        <div class="chart-wrap"><canvas id="${prefix}chart-hist"></canvas></div>
+      </div>
+      <!-- Output 4: Traffic Timeline -->
+      <div class="chart-card">
+        <div class="chart-title">// Traffic Timeline (bytes/sec)</div>
+        <div class="chart-wrap"><canvas id="${prefix}chart-time"></canvas></div>
+      </div>
+    </div>
+
+    <!-- DNS Queries -->
+    <div class="section-lbl">// DNS Queries (${fp.dns_queries.length})</div>
+    <div class="chip-list">${dnsHtml}</div>
+
+    <!-- Unique IPs -->
+    <div class="section-lbl">// Destination IPs (${fp.unique_ip_count})</div>
+    ${ipHtml}
+  </div>`;
+}
+
+/* ── Render FR-7 charts for one fingerprint ──────────────────────────────── */
+const PALETTE = ['#00e5ff','#ff6b35','#39ff14','#b44fff','#ffd700','#ff3b5c','#00bfa5'];
+const GRID    = '#1a3a55';
+const TICK    = { color:'#5a7a9a', font:{family:'Share Tech Mono',size:10} };
+
+function renderCharts(fp, prefix) {
+  // ── Output 2: Protocol Pie (FR-7) ─────────────────────────────────────
+  destroyChart(`${prefix}chart-proto`);
+  const protoLabels = Object.keys(fp.protocol_distribution);
+  const protoData   = Object.values(fp.protocol_distribution);
+  if (protoLabels.length) {
+    chartInstances[`${prefix}chart-proto`] = new Chart($(`${prefix}chart-proto`), {
+      type: 'doughnut',
+      data: {
+        labels: protoLabels,
+        datasets: [{ data: protoData, backgroundColor: PALETTE, borderWidth: 0 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color:'#c8d8e8', font:{family:'Share Tech Mono',size:11} } } }
+      }
+    });
+  }
+
+  // ── Output 3: Packet Size Histogram (FR-7) ─────────────────────────────
+  destroyChart(`${prefix}chart-hist`);
+  const hist = fp.size_histogram || {};
+  chartInstances[`${prefix}chart-hist`] = new Chart($(`${prefix}chart-hist`), {
+    type: 'bar',
+    data: {
+      labels: Object.keys(hist),
+      datasets: [{
+        label: 'Packets',
+        data: Object.values(hist),
+        backgroundColor: 'rgba(0,229,255,0.45)',
+        borderColor: '#00e5ff',
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: TICK, grid: { color: GRID } },
+        y: { ticks: TICK, grid: { color: GRID } }
+      }
+    }
+  });
+
+  // ── Output 4: Traffic Timeline (FR-7) ─────────────────────────────────
+  destroyChart(`${prefix}chart-time`);
+  const tl = fp.timeline || [];
+  chartInstances[`${prefix}chart-time`] = new Chart($(`${prefix}chart-time`), {
+    type: 'line',
+    data: {
+      labels: tl.map(t => t.second + 's'),
+      datasets: [{
+        label: 'Bytes/sec',
+        data: tl.map(t => t.bytes),
+        borderColor: '#00e5ff',
+        backgroundColor: 'rgba(0,229,255,0.07)',
+        borderWidth: 2,
+        pointRadius: 2,
+        fill: true,
+        tension: 0.4,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: TICK, grid: { color: GRID } },
+        y: { ticks: TICK, grid: { color: GRID } }
+      }
+    }
+  });
+}
+
+/* ── FR-7 comparison: overlay timeline (Output 5) ────────────────────────── */
+function renderOverlay(fp1, fp2) {
+  $('overlay-chart').innerHTML = `
+    <div class="chart-card">
+      <div class="chart-title">// Traffic Timeline Overlay — Both Sites</div>
+      <div class="chart-wrap" style="height:260px"><canvas id="chart-overlay"></canvas></div>
+    </div>`;
+
+  const tl1 = fp1.timeline || [];
+  const tl2 = fp2.timeline || [];
+  const len  = Math.max(tl1.length, tl2.length);
+  const lbls = Array.from({length: len}, (_,i) => i + 's');
+
+  destroyChart('chart-overlay');
+  chartInstances['chart-overlay'] = new Chart($('chart-overlay'), {
+    type: 'line',
+    data: {
+      labels: lbls,
+      datasets: [
+        {
+          label: fp1.site_url,
+          data: lbls.map((_,i) => tl1[i]?.bytes || 0),
+          borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.06)',
+          borderWidth: 2, fill: true, tension: 0.4, pointRadius: 2
+        },
+        {
+          label: fp2.site_url,
+          data: lbls.map((_,i) => tl2[i]?.bytes || 0),
+          borderColor: '#ff6b35', backgroundColor: 'rgba(255,107,53,0.06)',
+          borderWidth: 2, fill: true, tension: 0.4, pointRadius: 2
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color:'#c8d8e8', font:{family:'Share Tech Mono',size:11} } } },
+      scales: {
+        x: { ticks: TICK, grid: { color: GRID } },
+        y: { ticks: TICK, grid: { color: GRID } }
+      }
+    }
+  });
+}
+
+/* ── API: Single site (FR-2 → backend pipeline) ──────────────────────────── */
+async function analyzeSingle() {
+  hideErr('err-single');
+  const url = $('url-single').value.trim();
+
+  // FR-1: client-side validation before sending to server
+  if (!isValidUrl(url)) {
+    showErr('err-single', 'Could not reach the website — please enter a valid URL (e.g. https://example.com)');
+    return;
+  }
+
+  $('btn-single').disabled = true;
+  setStep(2);
+  $('loading').style.display = 'flex';
+  $('load-msg').textContent  = 'CAPTURING PACKETS...';
+  $('load-sub').textContent  = 'Sniffing network interface for 10 seconds — please wait';
+
+  try {
+    setStep(3);
+    const res  = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({url})
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      showErr('err-single', data.error);
+      $('loading').style.display = 'none';
+      return;
+    }
+
+    $('loading').style.display = 'none';
+    setStep(4);
+    $('fp-single').innerHTML = buildCard(data, '', null);
+    $('results').style.display = 'block';
+    renderCharts(data, '');
+
+  } catch(e) {
+    // NFR-1: human-readable error
+    showErr('err-single', 'Could not reach the server. Is app.py running? Start it with: python app.py');
+    $('loading').style.display = 'none';
+    setStep(1);
+  } finally {
+    $('btn-single').disabled = false;
+  }
+}
+
+/* ── API: Compare two sites (FR-6) ──────────────────────────────────────── */
+async function analyzeCompare() {
+  hideErr('err-compare');
+  const url1 = $('url-a').value.trim();
+  const url2 = $('url-b').value.trim();
+
+  if (!isValidUrl(url1) || !isValidUrl(url2)) {
+    showErr('err-compare', 'Please enter valid URLs for both sites (must start with http:// or https://)');
+    return;
+  }
+
+  $('btn-compare').disabled  = true;
+  setStep(2);
+  $('loading').style.display = 'flex';
+  $('load-msg').textContent  = 'CAPTURING TWO SITES...';
+  $('load-sub').textContent  = 'Running two sequential 10-second captures (~20 seconds total)';
+
+  try {
+    setStep(3);
+    const res  = await fetch('/api/compare', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({url1, url2})
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      showErr('err-compare', data.error);
+      $('loading').style.display = 'none';
+      return;
+    }
+
+    const {fingerprint1: fp1, fingerprint2: fp2, diff} = data;
+    $('loading').style.display = 'none';
+    setStep(4);
+
+    // FR-6: side-by-side cards with color-coded diff indicators
+    $('fp-compare').innerHTML =
+      buildCard(fp1, 'a_', diff) +
+      buildCard(fp2, 'b_', diff);
+
+    $('results-compare').style.display = 'block';
+    renderCharts(fp1, 'a_');
+    renderCharts(fp2, 'b_');
+    renderOverlay(fp1, fp2);   // Output 5: overlay timeline
+
+  } catch(e) {
+    showErr('err-compare', 'Could not reach the server. Is app.py running? Start it with: python app.py');
+    $('loading').style.display = 'none';
+    setStep(1);
+  } finally {
+    $('btn-compare').disabled = false;
+  }
+}
+</script>
+
+</body>
+</html>
